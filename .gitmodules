@@ -1,0 +1,4 @@
+[submodule "deps/tquic"]
+	path = deps/tquic
+	url = https://github.com/Tencent/tquic
+	ignore = dirty
