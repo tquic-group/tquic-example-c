@@ -25,16 +25,16 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <openssl/pem.h>
-#include <openssl/x509.h>
-#include <openssl/ssl.h>
 
-#include <tquic.h>
+#include "openssl/pem.h"
+#include "openssl/x509.h"
+#include "openssl/ssl.h"
+#include "tquic.h"
 
 #define READ_BUF_SIZE 4096
 #define MAX_DATAGRAM_SIZE 1200
 
-// Simple QUIC http/0.9 server, return same response to any requests.
+// A simple server that supports HTTP/0.9 over QUIC
 struct simple_server {
     struct quic_endpoint_t *quic_endpoint;
     ev_timer timer;
@@ -80,8 +80,8 @@ void server_on_stream_readable(void *tctx, struct quic_conn_t *conn,
     printf("%.*s\n", (int) r, buf);
 
     if (fin) {
-        static const char *resp = "OK";
-        quic_stream_write(conn, stream_id, (uint8_t *) resp, 2, true);
+        static const char *resp = "HTTP/0.9 200 OK";
+        quic_stream_write(conn, stream_id, (uint8_t *) resp, strlen(resp), true);
     }
 }
 
@@ -167,7 +167,9 @@ static int select_alpn (SSL *ssl, const unsigned char **out,
     int r = SSL_select_next_proto((unsigned char **) out, outlen, in, inlen,
                                     (unsigned char *) s_alpn, strlen(s_alpn));
     if (r == OPENSSL_NPN_NEGOTIATED)
+    {
         return SSL_TLSEXT_ERR_OK;
+    }
     else
     {
         return SSL_TLSEXT_ERR_ALERT_FATAL;
@@ -273,7 +275,10 @@ static void debug_log(const unsigned char *line, void *argp)
 
 int main(int argc, char *argv[])
 {
-    // TODO: add more arguments and command line parsing.
+    if (argc < 3) {
+        fprintf(stderr, "%s <listen_addr> <listen_port>\n", argv[0]);
+        return -1;
+    }
     const char *host = argv[1];
     const char *port = argv[2];
 
@@ -333,30 +338,21 @@ int main(int argc, char *argv[])
         return -1;
     };
 
-    quic_transport_handler_t quic_transport_handler = {
-        .methods = &quic_transport_methods,
-        .context = &server,
-    };
-
-    quic_packet_send_handler_t quic_packet_send_handler = {
-        .methods = &quic_packet_send_methods,
-        .context = &server,
-    };
-
-    struct quic_endpoint_t *quic_endpoint =
-        quic_endpoint_new(config, true, &quic_transport_handler,
-                          &quic_packet_send_handler);
-    if (quic_endpoint == NULL) {
-        fprintf(stderr, "failed to create quic endpoint\n");
-        return -1;
-    }
-    server.quic_endpoint = quic_endpoint;
-
     // Create and set tls conf selector for quic config.
     if (server_load_ssl_ctx(&server) != 0) {
         return -1;
     }
     quic_config_set_tls_selector(config, &tls_config_select_method, &server);
+
+    // Create quic endpoint
+    struct quic_endpoint_t *quic_endpoint =
+        quic_endpoint_new(config, true, &quic_transport_methods, &server,
+                          &quic_packet_send_methods, &server);
+    if (quic_endpoint == NULL) {
+        fprintf(stderr, "failed to create quic endpoint\n");
+        return -1;
+    }
+    server.quic_endpoint = quic_endpoint;
 
     // Start event loop.
     struct ev_loop *loop = ev_default_loop(0);
@@ -372,8 +368,8 @@ int main(int argc, char *argv[])
     // Event loop end.
     freeaddrinfo(local);
     SSL_CTX_free(server.ssl_ctx);
-    // TODO: solve memory release problem.
     quic_endpoint_free(quic_endpoint);
+    quic_config_free(config);
 
     return 0;
 }
