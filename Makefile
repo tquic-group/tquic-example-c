@@ -9,13 +9,16 @@ LDFLAGS = -L$(LIB_DIR)
 
 LIBS = $(LIB_DIR)/libtquic.a -lev -ldl -lm
 
-all: simple_server
+all: simple_server simple_client
 
 simple_server: simple_server.c $(LIB_DIR)/libtquic.a
+	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(INCS) $(LIBS)
+
+simple_client: simple_client.c $(LIB_DIR)/libtquic.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(INCS) $(LIBS)
 
 $(LIB_DIR)/libtquic.a:
 	git submodule update --init --recursive && cd $(TQUIC_DIR) && cargo build --release -F ffi
 
 clean:
-	@$(RM) -rf simple_server
+	@$(RM) -rf simple_server simple_client
