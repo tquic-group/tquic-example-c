@@ -260,7 +260,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Set logger.
-    quic_set_logger(debug_log, NULL, "TRACE");
+    quic_set_logger(debug_log, NULL, QUIC_LOG_LEVEL_TRACE);
 
     // Create client.
     struct simple_client client;
