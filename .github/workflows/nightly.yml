@@ -1,0 +1,23 @@
+name: Build nightly
+
+on:
+  schedule:
+    - cron: '30 5 * * *'
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+    - name: Code format check
+      run: clang-format --Werror --dry-run simple_server.c simple_client.c
+    - name: Install dependencies
+      run: sudo apt install libev-dev
+    - name: Build libtquic using the latest version
+      run: git submodule update --init --remote && cd deps/tquic && cargo build --release -F ffi
+    - name: Build simple examples
+      run: make

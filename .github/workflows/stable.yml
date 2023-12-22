@@ -1,4 +1,4 @@
-name: C/C++ CI
+name: Build stable
 
 on:
   push:
@@ -17,5 +17,5 @@ jobs:
       run: clang-format --Werror --dry-run simple_server.c simple_client.c
     - name: Install dependencies
       run: sudo apt install libev-dev
-    - name: make
+    - name: Build simple examples
       run: make
