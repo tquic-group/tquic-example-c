@@ -11,8 +11,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-        with:
-          submodules: 'recursive'
+      with:
+        submodules: 'recursive'
     - name: Code format check
       run: clang-format --Werror --dry-run simple_server.c simple_client.c
     - name: Install dependencies
