@@ -260,8 +260,8 @@ static void timeout_callback(EV_P_ ev_timer *w, int revents) {
     ev_timer_again(loop, &server->timer);
 }
 
-static void debug_log(const unsigned char *line, void *argp) {
-    fprintf(stderr, "%s\n", line);
+static void debug_log(const uint8_t *data, size_t data_len, void *argp) {
+    fwrite(data, sizeof(uint8_t), data_len, stderr);
 }
 
 static int create_socket(const char *host, const char *port,

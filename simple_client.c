@@ -218,8 +218,8 @@ static void timeout_callback(EV_P_ ev_timer *w, int revents) {
     process_connections(client);
 }
 
-static void debug_log(const unsigned char *line, void *argp) {
-    fprintf(stderr, "%s\n", line);
+static void debug_log(const uint8_t *data, size_t data_len, void *argp) {
+    fwrite(data, sizeof(uint8_t), data_len, stderr);
 }
 
 static int create_socket(const char *host, const char *port,
@@ -316,8 +316,9 @@ int main(int argc, char *argv[]) {
     ret = quic_endpoint_connect(
         client.quic_endpoint, (struct sockaddr *)&client.local_addr,
         client.local_addr_len, peer->ai_addr, peer->ai_addrlen,
-        NULL /* client_name*/, NULL /* session */, 0 /* session_len */,
-        NULL /* token */, 0 /* token_len */, NULL /*index*/);
+        NULL /* server_name */, NULL /* session */, 0 /* session_len */,
+        NULL /* token */, 0 /* token_len */, NULL /* config */,
+        NULL /* index */);
     if (ret < 0) {
         fprintf(stderr, "failed to connect to client: %d\n", ret);
         ret = -1;
