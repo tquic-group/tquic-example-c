@@ -40,6 +40,7 @@ struct simple_client {
     struct sockaddr_storage local_addr;
     socklen_t local_addr_len;
     SSL_CTX *ssl_ctx;
+    struct quic_tls_config_t *tls_config;
     struct quic_conn_t *conn;
     struct ev_loop *loop;
 };
@@ -146,6 +147,7 @@ int client_load_ssl_ctx(struct simple_client *client) {
         fprintf(stderr, "set alpn failed\n");
         return -1;
     }
+    client->tls_config = quic_tls_config_new_with_ssl_ctx(client->ssl_ctx);
 
     return 0;
 }
@@ -295,7 +297,7 @@ int main(int argc, char *argv[]) {
         ret = -1;
         goto EXIT;
     }
-    quic_config_set_tls_config(config, client.ssl_ctx);
+    quic_config_set_tls_config(config, client.tls_config);
 
     // Create quic endpoint
     client.quic_endpoint =
@@ -339,6 +341,9 @@ EXIT:
     }
     if (client.ssl_ctx != NULL) {
         SSL_CTX_free(client.ssl_ctx);
+    }
+    if (client.tls_config != NULL) {
+        quic_tls_config_free(client.tls_config);
     }
     if (client.sock > 0) {
         close(client.sock);
