@@ -42,6 +42,7 @@ struct simple_server {
     struct sockaddr_storage local_addr;
     socklen_t local_addr_len;
     SSL_CTX *ssl_ctx;
+    struct quic_tls_config_t *tls_config;
     struct ev_loop *loop;
 };
 
@@ -121,15 +122,16 @@ int server_on_packets_send(void *psctx, struct quic_packet_out_spec_t *pkts,
     return sent_count;
 }
 
-SSL_CTX *server_get_default_tls_config(void *ctx) {
+struct quic_tls_config_t *server_get_default_tls_config(void *ctx) {
     struct simple_server *server = ctx;
-    return server->ssl_ctx;
+    return server->tls_config;
 }
 
-SSL_CTX *server_select_tls_config(void *ctx, const uint8_t *server_name,
-                                  size_t server_name_len) {
+struct quic_tls_config_t *server_select_tls_config(void *ctx,
+                                                   const uint8_t *server_name,
+                                                   size_t server_name_len) {
     struct simple_server *server = ctx;
-    return server->ssl_ctx;
+    return server->tls_config;
 }
 
 static char s_alpn[0x100];
@@ -179,6 +181,7 @@ int server_load_ssl_ctx(struct simple_server *server) {
         return -1;
     }
     SSL_CTX_set_alpn_select_cb(server->ssl_ctx, select_alpn, NULL);
+    server->tls_config = quic_tls_config_new_with_ssl_ctx(server->ssl_ctx);
 
     return 0;
 }
@@ -369,6 +372,9 @@ EXIT:
     }
     if (server.ssl_ctx != NULL) {
         SSL_CTX_free(server.ssl_ctx);
+    }
+    if (server.tls_config != NULL) {
+        quic_tls_config_free(server.tls_config);
     }
     if (server.sock > 0) {
         close(server.sock);
