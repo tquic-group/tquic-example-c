@@ -41,7 +41,6 @@ struct simple_server {
     int sock;
     struct sockaddr_storage local_addr;
     socklen_t local_addr_len;
-    SSL_CTX *ssl_ctx;
     struct quic_tls_config_t *tls_config;
     struct ev_loop *loop;
 };
@@ -132,58 +131,6 @@ struct quic_tls_config_t *server_select_tls_config(void *ctx,
                                                    size_t server_name_len) {
     struct simple_server *server = ctx;
     return server->tls_config;
-}
-
-static char s_alpn[0x100];
-
-static int add_alpn(const char *alpn) {
-    size_t alpn_len, all_len;
-
-    alpn_len = strlen(alpn);
-    if (alpn_len > 255) return -1;
-
-    all_len = strlen(s_alpn);
-    if (all_len + 1 + alpn_len + 1 > sizeof(s_alpn)) return -1;
-
-    s_alpn[all_len] = alpn_len;
-    memcpy(&s_alpn[all_len + 1], alpn, alpn_len);
-    s_alpn[all_len + 1 + alpn_len] = '\0';
-    return 0;
-}
-
-static int select_alpn(SSL *ssl, const unsigned char **out,
-                       unsigned char *outlen, const unsigned char *in,
-                       unsigned int inlen, void *arg) {
-    int r = SSL_select_next_proto((unsigned char **)out, outlen, in, inlen,
-                                  (unsigned char *)s_alpn, strlen(s_alpn));
-    if (r == OPENSSL_NPN_NEGOTIATED) {
-        return SSL_TLSEXT_ERR_OK;
-    } else {
-        return SSL_TLSEXT_ERR_ALERT_FATAL;
-    }
-}
-
-static const char *const CERT_FILE = "cert.crt";
-static const char *const KEY_FILE = "cert.key";
-
-int server_load_ssl_ctx(struct simple_server *server) {
-    add_alpn("http/0.9");
-    server->ssl_ctx = SSL_CTX_new(TLS_method());
-    if (SSL_CTX_use_certificate_chain_file(server->ssl_ctx, CERT_FILE) != 1) {
-        fprintf(stderr, "failed to load cert\n");
-        SSL_CTX_free(server->ssl_ctx);
-        return -1;
-    }
-    if (SSL_CTX_use_PrivateKey_file(server->ssl_ctx, KEY_FILE,
-                                    SSL_FILETYPE_PEM) != 1) {
-        fprintf(stderr, "failed to load key\n");
-        SSL_CTX_free(server->ssl_ctx);
-        return -1;
-    }
-    SSL_CTX_set_alpn_select_cb(server->ssl_ctx, select_alpn, NULL);
-    server->tls_config = quic_tls_config_new_with_ssl_ctx(server->ssl_ctx);
-
-    return 0;
 }
 
 const struct quic_transport_methods_t quic_transport_methods = {
@@ -310,12 +257,12 @@ int main(int argc, char *argv[]) {
     }
 
     // Set logger.
-    quic_set_logger(debug_log, NULL, QUIC_LOG_LEVEL_TRACE);
+    quic_set_logger(debug_log, NULL, "TRACE");
 
     // Create simple server.
     struct simple_server server;
     server.quic_endpoint = NULL;
-    server.ssl_ctx = NULL;
+    server.tls_config = NULL;
     server.loop = NULL;
     quic_config_t *config = NULL;
     int ret = 0;
@@ -338,8 +285,11 @@ int main(int argc, char *argv[]) {
     quic_config_set_max_idle_timeout(config, 5000);
     quic_config_set_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
 
-    // Create and set tls conf selector for quic config.
-    if (server_load_ssl_ctx(&server) != 0) {
+    // Create and set tls config.
+    const char *const protos[1] = {"http/0.9"};
+    server.tls_config = quic_tls_config_new_server_config(
+        "cert.crt", "cert.key", protos, 1, true);
+    if (server.tls_config == NULL) {
         ret = -1;
         goto EXIT;
     }
@@ -369,9 +319,6 @@ int main(int argc, char *argv[]) {
 EXIT:
     if (local != NULL) {
         freeaddrinfo(local);
-    }
-    if (server.ssl_ctx != NULL) {
-        SSL_CTX_free(server.ssl_ctx);
     }
     if (server.tls_config != NULL) {
         quic_tls_config_free(server.tls_config);

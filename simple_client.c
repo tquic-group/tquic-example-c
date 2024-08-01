@@ -39,7 +39,6 @@ struct simple_client {
     int sock;
     struct sockaddr_storage local_addr;
     socklen_t local_addr_len;
-    SSL_CTX *ssl_ctx;
     struct quic_tls_config_t *tls_config;
     struct quic_conn_t *conn;
     struct ev_loop *loop;
@@ -116,40 +115,6 @@ int client_on_packets_send(void *psctx, struct quic_packet_out_spec_t *pkts,
     }
 
     return sent_count;
-}
-
-static char s_alpn[0x100];
-
-static int add_alpn(const char *alpn) {
-    size_t alpn_len, all_len;
-
-    alpn_len = strlen(alpn);
-    if (alpn_len > 255) return -1;
-
-    all_len = strlen(s_alpn);
-    if (all_len + 1 + alpn_len + 1 > sizeof(s_alpn)) return -1;
-
-    s_alpn[all_len] = alpn_len;
-    memcpy(&s_alpn[all_len + 1], alpn, alpn_len);
-    s_alpn[all_len + 1 + alpn_len] = '\0';
-    return 0;
-}
-
-int client_load_ssl_ctx(struct simple_client *client) {
-    add_alpn("http/0.9");
-    client->ssl_ctx = SSL_CTX_new(TLS_method());
-    if (SSL_CTX_set_default_verify_paths(client->ssl_ctx) != 1) {
-        fprintf(stderr, "set default verify path failed\n");
-        return -1;
-    }
-    if (SSL_CTX_set_alpn_protos(client->ssl_ctx, (const unsigned char *)s_alpn,
-                                strlen(s_alpn)) != 0) {
-        fprintf(stderr, "set alpn failed\n");
-        return -1;
-    }
-    client->tls_config = quic_tls_config_new_with_ssl_ctx(client->ssl_ctx);
-
-    return 0;
 }
 
 const struct quic_transport_methods_t quic_transport_methods = {
@@ -262,12 +227,12 @@ int main(int argc, char *argv[]) {
     }
 
     // Set logger.
-    quic_set_logger(debug_log, NULL, QUIC_LOG_LEVEL_TRACE);
+    quic_set_logger(debug_log, NULL, "TRACE");
 
     // Create client.
     struct simple_client client;
     client.quic_endpoint = NULL;
-    client.ssl_ctx = NULL;
+    client.tls_config = NULL;
     client.conn = NULL;
     client.loop = NULL;
     quic_config_t *config = NULL;
@@ -293,7 +258,9 @@ int main(int argc, char *argv[]) {
     quic_config_set_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
 
     // Create and set tls config.
-    if (client_load_ssl_ctx(&client) != 0) {
+    const char *const protos[1] = {"http/0.9"};
+    client.tls_config = quic_tls_config_new_client_config(protos, 1, true);
+    if (client.tls_config == NULL) {
         ret = -1;
         goto EXIT;
     }
@@ -338,9 +305,6 @@ int main(int argc, char *argv[]) {
 EXIT:
     if (peer != NULL) {
         freeaddrinfo(peer);
-    }
-    if (client.ssl_ctx != NULL) {
-        SSL_CTX_free(client.ssl_ctx);
     }
     if (client.tls_config != NULL) {
         quic_tls_config_free(client.tls_config);
