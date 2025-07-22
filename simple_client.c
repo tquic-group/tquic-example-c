@@ -42,6 +42,7 @@ struct simple_client {
     struct quic_tls_config_t *tls_config;
     struct quic_conn_t *conn;
     struct ev_loop *loop;
+    struct addrinfo *peer;
 };
 
 void client_on_conn_created(void *tctx, struct quic_conn_t *conn) {
@@ -133,6 +134,19 @@ const struct quic_packet_send_methods_t quic_packet_send_methods = {
 
 static void process_connections(struct simple_client *client) {
     quic_endpoint_process_connections(client->quic_endpoint);
+
+    const struct quic_path_stats_t *stats = quic_conn_path_stats(
+        client->conn,
+        (struct sockaddr *)&client->local_addr,
+        client->local_addr_len,
+        client->peer->ai_addr,
+        client->peer->ai_addrlen);
+
+    if (stats) {
+        printf("Min pacing rate = %" PRIu64 " bps \n", stats->min_pacing_rate);
+        printf("Pto count = %" PRIu64 " \n", stats->pto_count);
+    }
+
     double timeout = quic_endpoint_timeout(client->quic_endpoint) / 1e3f;
     if (timeout < 0.0001) {
         timeout = 0.0001;
@@ -266,6 +280,7 @@ int main(int argc, char *argv[]) {
     }
     quic_config_set_tls_config(config, client.tls_config);
 
+    client.peer = peer;
     // Create quic endpoint
     client.quic_endpoint =
         quic_endpoint_new(config, false, &quic_transport_methods, &client,
